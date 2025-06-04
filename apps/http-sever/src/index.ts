@@ -5,14 +5,19 @@ import {prismaClient} from "@repo/db/db"
 import express from "express"
 import bcryptjs from "bcryptjs"
 import { authenticate } from "./authmiddleware"
+import cors from "cors"
 
 const app = express()
 app.use(express.json())
+app.use(cors({
+    origin: "http://localhost:3000",
+    credentials: true
+}))
 
 app.post('/signup',async(req,res)=>{
     const data = createUserSchema.safeParse(req.body)
-    if(!data){
-        res.json({
+    if(!data.success){
+        res.status(400).json({
             message:"Invalid Inputs"
         })
         return
@@ -20,7 +25,7 @@ app.post('/signup',async(req,res)=>{
     const salt = (await bcryptjs.genSalt(11)).toString()
     const password = data.data?.password
     if (typeof password !== "string") {
-        res.json({
+        res.status(400).json({
             message: "Password is required"
         })
         return
@@ -34,23 +39,27 @@ app.post('/signup',async(req,res)=>{
                 name: data.data!.name.toString()
             }
         })
+        const token = jwt.sign({
+            userId: user.id
+        }, JWT_SECRET)
         res.json({
-            message: "User created"
+            token,
+            message: "User created successfully"
         })
     } catch (error) {
-        res.json({
-            message:"Invalid data"
+        res.status(400).json({
+            message:"Username already exists"
         })
     }
-
-
 })
+
 app.post('/signin',async(req,res)=>{
     const data = signinSchema.safeParse(req.body);
-    if(!data){
-        res.json({
+    if(!data.success){
+        res.status(400).json({
             message: "Invalid inputs"
         })
+        return
     }
     const user = await prismaClient.user.findFirst({
         where: {
@@ -58,16 +67,17 @@ app.post('/signin',async(req,res)=>{
         }
     })
     if (!user || typeof user.password !== "string" || typeof data.data?.password !== "string") {
-        res.json({
+        res.status(401).json({
             message: "Invalid username or password"
         });
         return;
     }
     const compare = await bcryptjs.compare(data.data.password, user.password);
     if(!compare){
-        res.json({
+        res.status(401).json({
             message: "Invalid credentials"
         })
+        return
     }
     const token = jwt.sign({
         userId: user.id
@@ -75,9 +85,8 @@ app.post('/signin',async(req,res)=>{
     res.json({
         token
     })
-
-    
 })
+
 app.post('/room', authenticate ,async(req,res)=>{
     const data = createRoomSchema.safeParse(req.body);
     if(!data){
